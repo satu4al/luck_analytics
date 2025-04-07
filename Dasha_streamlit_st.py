@@ -1,6 +1,5 @@
 from skyfield.api import load
 from datetime import datetime, timedelta
-from fpdf import FPDF
 
 # Vimshottari Dasha Data
 DASHA_YEARS = {
@@ -45,7 +44,7 @@ def calculate_dasha_start(birth_year, moon_deg):
     idx = DASHA_SEQUENCE.index(lord)
     start_year = birth_year
     dasha_list = []
-    
+
     for i in range(len(DASHA_SEQUENCE)):
         lord = DASHA_SEQUENCE[(idx + i) % len(DASHA_SEQUENCE)]
         duration = DASHA_YEARS[lord]
@@ -57,9 +56,8 @@ def calculate_antardashas(mahadasa_lord, start_year):
     duration = DASHA_YEARS[mahadasa_lord]
     antardasha_list = []
     start_date = datetime(start_year, 1, 1)
-    total_days = int(duration * 365.25)
-
     current_start = start_date
+
     for sub_lord in DASHA_SEQUENCE:
         proportion = DASHA_YEARS[sub_lord] / 120
         sub_duration_days = int(proportion * duration * 365.25)
@@ -114,47 +112,17 @@ else:
     current_dasha = ("Unknown", this_year, this_year)
     career, love, health = ("Balanced career", "Steady love life", "Normal health")
 
-# -- PDF REPORT GENERATION --
-pdf = FPDF()
-pdf.add_page()
-pdf.set_font("Arial", size=14)
-pdf.cell(200, 10, txt="🔮 Vedic Astrology Dasha Report", ln=1, align="C")
-pdf.ln(5)
+# -- Optional Output (For Console Debug) --
+print(f"\nMoon Nakshatra Lord: {moon_lord}")
+print(f"Current Mahadasha: {current_dasha[0]} ({current_dasha[1]} - {current_dasha[2]})")
+print(f"Career: {career}\nLove: {love}\nHealth: {health}")
 
-pdf.set_font("Arial", size=12)
-pdf.cell(200, 10, txt=f"Name: {name}", ln=True)
-pdf.cell(200, 10, txt=f"Date of Birth: {dob.strftime('%d %B %Y %H:%M')}", ln=True)
-pdf.cell(200, 10, txt=f"Location: Lat {latitude}, Lon {longitude}", ln=True)
-pdf.ln(5)
-
-pdf.set_font("Arial", 'B', size=12)
-pdf.cell(200, 10, txt=f"Moon Nakshatra Lord: {moon_lord}", ln=True)
-pdf.cell(200, 10, txt=f"Current Mahadasha: {current_dasha[0]} ({current_dasha[1]} - {current_dasha[2]})", ln=True)
-pdf.ln(5)
-
-pdf.set_font("Arial", size=12)
-pdf.cell(200, 10, txt="Predictions for the Current Year:", ln=True)
-pdf.cell(200, 10, txt=f"Career: {career}", ln=True)
-pdf.cell(200, 10, txt=f"Love: {love}", ln=True)
-pdf.cell(200, 10, txt=f"Health: {health}", ln=True)
-pdf.ln(10)
-
-# Mahadasha Periods
-pdf.set_font("Arial", 'B', 12)
-pdf.cell(200, 10, txt="Upcoming Mahadasha Periods:", ln=True)
-pdf.set_font("Arial", size=11)
+print("\nUpcoming Mahadasha Periods:")
 for lord, start, end in dasha_periods:
-    pdf.cell(200, 10, txt=f"{lord}: {start} - {end}", ln=True)
+    print(f"{lord}: {start} - {end}")
 
-# Antardasha for Current Mahadasha
-pdf.ln(10)
-pdf.set_font("Arial", 'B', 12)
-pdf.cell(200, 10, txt=f"Antardashas within {current_dasha[0]} Mahadasha:", ln=True)
-pdf.set_font("Arial", size=11)
-antars = calculate_antardashas(current_dasha[0], current_dasha[1])
-for lord, start, end in antars:
-    pdf.cell(200, 10, txt=f"{lord}: {start} to {end}", ln=True)
-
-# Save PDF
-pdf.output("dasha_report_with_antardasha.pdf")
-print("✅ PDF report with Antardasha saved as 'dasha_report_with_antardasha.pdf'")
+# Optionally calculate and print Antardasha
+print("\nAntardasha Periods under current Mahadasha:")
+antardashas = calculate_antardashas(current_dasha[0], current_dasha[1])
+for sub_lord, start_date, end_date in antardashas:
+    print(f"{sub_lord}: {start_date} to {end_date}")
