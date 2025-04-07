@@ -1,12 +1,6 @@
-import streamlit as st
-from datetime import datetime
-import pyswisseph as swe
+from skyfield.api import load
+from datetime import datetime, timedelta
 from fpdf import FPDF
-import tempfile
-import os
-
-# Set ephemeris path
-swe.set_ephe_path('')
 
 # Vimshottari Dasha Data
 DASHA_YEARS = {
@@ -14,6 +8,8 @@ DASHA_YEARS = {
     'Rahu': 18, 'Jupiter': 16, 'Saturn': 19, 'Mercury': 17
 }
 DASHA_SEQUENCE = ['Ketu', 'Venus', 'Sun', 'Moon', 'Mars', 'Rahu', 'Jupiter', 'Saturn', 'Mercury']
+TOTAL_DASHA_YEARS = sum(DASHA_YEARS.values())
+
 NAKSHATRA_LORDS = [
     ('Ketu', 0), ('Venus', 13.2), ('Sun', 26.4), ('Moon', 39.6),
     ('Mars', 52.8), ('Rahu', 66.0), ('Jupiter', 79.2),
@@ -57,83 +53,108 @@ def calculate_dasha_start(birth_year, moon_deg):
         start_year += duration
     return dasha_list
 
-def generate_pdf(name, dob, latitude, longitude, moon_lord, current_dasha, career, love, health, dasha_periods):
-    pdf = FPDF()
-    pdf.add_page()
-    pdf.set_font("Arial", size=14)
+def calculate_antardashas(mahadasa_lord, start_year):
+    duration = DASHA_YEARS[mahadasa_lord]
+    antardasha_list = []
+    start_date = datetime(start_year, 1, 1)
+    total_days = int(duration * 365.25)
 
-    pdf.cell(200, 10, txt="🔮 Vedic Astrology Dasha Report", ln=1, align="C")
-    pdf.ln(5)
-    pdf.set_font("Arial", size=12)
+    current_start = start_date
+    for sub_lord in DASHA_SEQUENCE:
+        proportion = DASHA_YEARS[sub_lord] / 120
+        sub_duration_days = int(proportion * duration * 365.25)
+        end_date = current_start + timedelta(days=sub_duration_days)
+        antardasha_list.append((sub_lord, current_start.date(), end_date.date()))
+        current_start = end_date
 
-    pdf.cell(200, 10, txt=f"Name: {name}", ln=True)
-    pdf.cell(200, 10, txt=f"Date of Birth: {dob.strftime('%d %B %Y %H:%M')}", ln=True)
-    pdf.cell(200, 10, txt=f"Location: Lat {latitude}, Lon {longitude}", ln=True)
-    pdf.ln(5)
+    return antardasha_list
 
-    pdf.set_font("Arial", 'B', size=12)
-    pdf.cell(200, 10, txt=f"Moon Nakshatra Lord: {moon_lord}", ln=True)
-    pdf.cell(200, 10, txt=f"Current Mahadasha: {current_dasha[0]} ({current_dasha[1]} - {current_dasha[2]})", ln=True)
-    pdf.ln(5)
+# -- INPUT SECTION --
+name = input("Enter your name: ")
+dob_str = input("Enter your date of birth (YYYY-MM-DD): ")
+tob_str = input("Time of birth (HH:MM, 24hr): ")
 
-    pdf.set_font("Arial", size=12)
-    pdf.multi_cell(0, 10, f"💼 Career: {career}")
-    pdf.multi_cell(0, 10, f"❤️ Love: {love}")
-    pdf.multi_cell(0, 10, f"🧘 Health: {health}")
-    pdf.ln(5)
-
-    pdf.set_font("Arial", 'B', 12)
-    pdf.cell(200, 10, txt="Full Vimshottari Dasha Periods", ln=True)
-    pdf.set_font("Arial", size=11)
-    for lord, start, end in dasha_periods:
-        pdf.cell(200, 8, txt=f"{lord}: {start} - {end}", ln=True)
-
-    tmp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".pdf")
-    pdf.output(tmp_file.name)
-    return tmp_file.name
-
-# --- Streamlit UI ---
-
-st.set_page_config(page_title="🪐 Astrology Dasha Report", layout="centered")
-st.title("🪐 Personalized Dasha Astrology Report Generator")
-
-with st.form("birth_form"):
-    name = st.text_input("Your Full Name")
-    dob = st.date_input("Date of Birth")
-    tob = st.time_input("Time of Birth")
-    latitude = st.number_input("Latitude (+North / -South)", format="%.6f")
-    longitude = st.number_input("Longitude (+East / -West)", format="%.6f")
-    submitted = st.form_submit_button("Generate My Dasha Report")
-
-if submitted:
+while True:
     try:
-        birth_datetime = datetime.combine(dob, tob)
-        jd = swe.julday(birth_datetime.year, birth_datetime.month, birth_datetime.day,
-                        birth_datetime.hour + birth_datetime.minute / 60)
-        moon_data = swe.calc_ut(jd, swe.MOON)
-        moon_lon = moon_data[0] if moon_data else 0.0
+        longitude = float(input("Enter longitude (East=+, West=-): "))
+        break
+    except ValueError:
+        print("Invalid input. Please enter a numeric value for longitude.")
 
-        moon_lord = get_moon_lord(moon_lon)
-        dasha_periods = calculate_dasha_start(birth_datetime.year, moon_lon)
+while True:
+    try:
+        latitude = float(input("Enter latitude (North=+, South=-): "))
+        break
+    except ValueError:
+        print("Invalid input. Please enter a numeric value for latitude.")
 
-        this_year = datetime.now().year
-        current_dasha = next((d for d in dasha_periods if d[1] <= this_year <= d[2]), None)
-        career, love, health = DASHA_PREDICTIONS.get(current_dasha[0], ("Balanced career", "Steady love life", "Normal health"))
+# -- MOON POSITION CALCULATION --
+try:
+    dob = datetime.strptime(f"{dob_str} {tob_str}", "%Y-%m-%d %H:%M")
+    eph = load('de421.bsp')
+    ts = load.timescale()
+    t = ts.utc(dob.year, dob.month, dob.day, dob.hour, dob.minute)
+    earth, moon = eph['earth'], eph['moon']
+    astrometric = earth.at(t).observe(moon).apparent()
+    _, moon_lon, _ = astrometric.ecliptic_latlon()
+    moon_lon = moon_lon.degrees
+except Exception as e:
+    print(f"Error calculating Moon longitude: {e}")
+    moon_lon = 0.0
 
-        st.subheader(f"🌕 Your Moon Nakshatra Lord: `{moon_lord}`")
-        st.markdown(f"**📅 Current Mahadasha:** `{current_dasha[0]}` ({current_dasha[1]} - {current_dasha[2]})")
-        st.write(f"💼 **Career:** {career}")
-        st.write(f"❤️ **Love:** {love}")
-        st.write(f"🧘 **Health:** {health}")
+# -- DASHA CALCULATION --
+moon_lord = get_moon_lord(moon_lon)
+dasha_periods = calculate_dasha_start(dob.year, moon_lon)
 
-        # Generate PDF and offer download
-        pdf_path = generate_pdf(name, birth_datetime, latitude, longitude, moon_lord, current_dasha, career, love, health, dasha_periods)
-        with open(pdf_path, "rb") as f:
-            st.download_button(label="📥 Download PDF Report",
-                               data=f,
-                               file_name=f"{name.replace(' ', '_')}_dasha_report.pdf",
-                               mime="application/pdf")
-        os.remove(pdf_path)
+this_year = datetime.now().year
+current_dasha = next((d for d in dasha_periods if d[1] <= this_year <= d[2]), None)
+if current_dasha:
+    career, love, health = DASHA_PREDICTIONS.get(current_dasha[0], ("Balanced career", "Steady love life", "Normal health"))
+else:
+    current_dasha = ("Unknown", this_year, this_year)
+    career, love, health = ("Balanced career", "Steady love life", "Normal health")
 
-    except Exception as e:
-        st.error(f"Something went wrong: {e}")
+# -- PDF REPORT GENERATION --
+pdf = FPDF()
+pdf.add_page()
+pdf.set_font("Arial", size=14)
+pdf.cell(200, 10, txt="🔮 Vedic Astrology Dasha Report", ln=1, align="C")
+pdf.ln(5)
+
+pdf.set_font("Arial", size=12)
+pdf.cell(200, 10, txt=f"Name: {name}", ln=True)
+pdf.cell(200, 10, txt=f"Date of Birth: {dob.strftime('%d %B %Y %H:%M')}", ln=True)
+pdf.cell(200, 10, txt=f"Location: Lat {latitude}, Lon {longitude}", ln=True)
+pdf.ln(5)
+
+pdf.set_font("Arial", 'B', size=12)
+pdf.cell(200, 10, txt=f"Moon Nakshatra Lord: {moon_lord}", ln=True)
+pdf.cell(200, 10, txt=f"Current Mahadasha: {current_dasha[0]} ({current_dasha[1]} - {current_dasha[2]})", ln=True)
+pdf.ln(5)
+
+pdf.set_font("Arial", size=12)
+pdf.cell(200, 10, txt="Predictions for the Current Year:", ln=True)
+pdf.cell(200, 10, txt=f"Career: {career}", ln=True)
+pdf.cell(200, 10, txt=f"Love: {love}", ln=True)
+pdf.cell(200, 10, txt=f"Health: {health}", ln=True)
+pdf.ln(10)
+
+# Mahadasha Periods
+pdf.set_font("Arial", 'B', 12)
+pdf.cell(200, 10, txt="Upcoming Mahadasha Periods:", ln=True)
+pdf.set_font("Arial", size=11)
+for lord, start, end in dasha_periods:
+    pdf.cell(200, 10, txt=f"{lord}: {start} - {end}", ln=True)
+
+# Antardasha for Current Mahadasha
+pdf.ln(10)
+pdf.set_font("Arial", 'B', 12)
+pdf.cell(200, 10, txt=f"Antardashas within {current_dasha[0]} Mahadasha:", ln=True)
+pdf.set_font("Arial", size=11)
+antars = calculate_antardashas(current_dasha[0], current_dasha[1])
+for lord, start, end in antars:
+    pdf.cell(200, 10, txt=f"{lord}: {start} to {end}", ln=True)
+
+# Save PDF
+pdf.output("dasha_report_with_antardasha.pdf")
+print("✅ PDF report with Antardasha saved as 'dasha_report_with_antardasha.pdf'")
